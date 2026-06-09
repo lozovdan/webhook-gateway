@@ -63,6 +63,12 @@ def _empty_signature_case() -> tuple[bytes, str, str]:
     return BODY, SECRET, ""
 
 
+def _non_ascii_signature_case() -> tuple[bytes, str, str]:
+    """Non-ASCII signature: hmac.compare_digest raises TypeError internally,
+    which verify_signature must swallow and turn into False (not propagate)."""
+    return BODY, SECRET, "кириллица"
+
+
 @pytest.mark.parametrize(
     "build_case",
     [
@@ -70,6 +76,7 @@ def _empty_signature_case() -> tuple[bytes, str, str]:
         pytest.param(_wrong_secret_case, id="wrong-secret"),
         pytest.param(_non_hex_signature_case, id="non-hex-signature"),
         pytest.param(_empty_signature_case, id="empty-signature"),
+        pytest.param(_non_ascii_signature_case, id="non-ascii-signature"),
     ],
 )
 def test_verify_signature_invalid_input_returns_false(

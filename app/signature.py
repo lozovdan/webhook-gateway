@@ -8,6 +8,9 @@ side channels.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 
 def generate_signature(body: bytes, secret: str) -> str:
     """Compute the hex-encoded HMAC-SHA256 of ``body``.
@@ -19,7 +22,7 @@ def generate_signature(body: bytes, secret: str) -> str:
     Returns:
         Lowercase hex digest of the HMAC-SHA256.
     """
-    raise NotImplementedError
+    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
 def verify_signature(body: bytes, secret: str, signature: str) -> bool:
@@ -38,4 +41,8 @@ def verify_signature(body: bytes, secret: str, signature: str) -> bool:
     Returns:
         ``True`` if the signature is valid, ``False`` otherwise.
     """
-    raise NotImplementedError
+    try:
+        expected: str = generate_signature(body, secret)
+        return hmac.compare_digest(expected, signature)
+    except TypeError:
+        return False
