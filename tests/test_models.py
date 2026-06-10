@@ -70,6 +70,13 @@ def test_donationevent_valid_payload_creates_typed_object() -> None:
     assert isinstance(event.timestamp, datetime)
 
 
+def test_donationevent_int_amount_is_accepted() -> None:
+    """int is part of the amount contract (str and int — yes, float — no)."""
+    event = DonationEvent(**_payload(amount=7))
+
+    assert event.amount == Decimal("7")
+
+
 @pytest.mark.parametrize(
     ("amount", "expected_type"),
     [
