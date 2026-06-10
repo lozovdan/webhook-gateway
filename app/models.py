@@ -60,20 +60,14 @@ class DonationEvent(BaseModel):
 
 
 class CurrencyTotal(BaseModel):
-    """Aggregated total for a single currency.
+    """Aggregate for one currency: exact Decimal total and event count."""
 
-    Minimal stub — fields (currency, total, count) are designed together with
-    the /stats aggregation in the service-layer step.
-    """
-
-    # TODO: define fields when building the service/stats layer
+    total: Decimal
+    count: int
 
 
 class StatsResponse(BaseModel):
-    """Aggregated statistics across processed donations.
+    """Stats grouped BY currency — different currencies are never summed."""
 
-    Minimal stub — fields (count, by_currency) are designed together with the
-    /stats aggregation in the service-layer step.
-    """
-
-    # TODO: define fields when building the service/stats layer
+    by_currency: dict[str, CurrencyTotal]
+    total_count: int

@@ -1,12 +1,10 @@
 """Business logic for donation processing.
 
 This layer sits between the HTTP routes and the store. It owns the rules that
-are *not* HTTP concerns: idempotency (a repeated ``event_id`` is ignored) and
-statistics aggregation. Keeping this logic here lets it be unit-tested
-without spinning up the web app.
+are *not* HTTP concerns: the currency allowlist, idempotency (a repeated
+``event_id`` is not stored twice) and statistics aggregation. The service
+knows nothing about HTTP status codes.
 """
-
-from __future__ import annotations
 
 from enum import Enum
 
@@ -19,29 +17,29 @@ class ProcessResult(Enum):
 
     CREATED = "created"
     DUPLICATE = "duplicate"
+    CURRENCY_NOT_ALLOWED = "currency_not_allowed"
 
 
 class DonationService:
-    """Coordinates validation results, persistence and aggregation."""
+    """Business rules: allowlist, idempotency, aggregation."""
 
-    def __init__(self, store: DonationStore) -> None:
+    def __init__(self, store: DonationStore, allowed_currencies: set[str]) -> None:
         """Create the service.
 
         Args:
-            store: The storage backend to read from and write to.
+            store: Storage backend to read from and write to.
+            allowed_currencies: Injected allowlist (service never reads
+                config directly — keeps it unit-testable).
         """
-        # TODO: keep a reference to the store
-        raise NotImplementedError
+        self._store = store
+        self._allowed_currencies = allowed_currencies
 
     def process_donation(self, event: DonationEvent) -> ProcessResult:
-        """Store a donation event idempotently.
+        """Apply business rules to a validated event and store it if new.
 
-        Args:
-            event: A validated donation event.
-
-        Returns:
-            :attr:`ProcessResult.CREATED` if newly stored, or
-            :attr:`ProcessResult.DUPLICATE` if ``event_id`` was already seen.
+        Check order: allowlist BEFORE duplicate — an event with a disallowed
+        currency gets CURRENCY_NOT_ALLOWED even if its event_id is already
+        stored. On DUPLICATE the store is not touched (first write wins).
         """
         raise NotImplementedError
 
