@@ -6,9 +6,10 @@ are *not* HTTP concerns: the currency allowlist, idempotency (a repeated
 knows nothing about HTTP status codes.
 """
 
+from decimal import Decimal
 from enum import Enum
 
-from app.models import DonationEvent, StatsResponse
+from app.models import CurrencyTotal, DonationEvent, StatsResponse
 from app.store import DonationStore
 
 
@@ -41,16 +42,33 @@ class DonationService:
         currency gets CURRENCY_NOT_ALLOWED even if its event_id is already
         stored. On DUPLICATE the store is not touched (first write wins).
         """
-        raise NotImplementedError
+        if event.currency not in self._allowed_currencies:
+            return ProcessResult.CURRENCY_NOT_ALLOWED
+        if self._store.exists(event.event_id):
+            return ProcessResult.DUPLICATE
+        self._store.add(event)
+        return ProcessResult.CREATED
 
     def get_donation(self, event_id: str) -> DonationEvent | None:
         """Return a single donation by id, or ``None`` if not found."""
-        raise NotImplementedError
+        return self._store.get(event_id)
 
     def list_donations(self) -> list[DonationEvent]:
         """Return all processed donations."""
-        raise NotImplementedError
+        return self._store.list_all()
 
     def compute_stats(self) -> StatsResponse:
         """Aggregate stored donations into per-currency totals and counts."""
-        raise NotImplementedError
+        totals: dict[str, Decimal] = {}
+        counts: dict[str, int] = {}
+        events = self._store.list_all()
+        for event in events:
+            totals[event.currency] = (
+                totals.get(event.currency, Decimal("0")) + event.amount
+            )
+            counts[event.currency] = counts.get(event.currency, 0) + 1
+        by_currency = {
+            currency: CurrencyTotal(total=total, count=counts[currency])
+            for currency, total in totals.items()
+        }
+        return StatsResponse(by_currency=by_currency, total_count=len(events))
