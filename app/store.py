@@ -5,8 +5,6 @@ swapped for a real database) and a simple in-memory implementation backed by
 a dict, which is enough for this demo and for fast, isolated tests.
 """
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 
 from app.models import DonationEvent
@@ -17,10 +15,11 @@ class DonationStore(ABC):
 
     @abstractmethod
     def add(self, event: DonationEvent) -> None:
-        """Persist a new donation event.
+        """Persist a donation event.
 
-        Args:
-            event: The validated donation to store.
+        A duplicate event_id OVERWRITES the stored event (last-write-wins):
+        the store is dumb storage; the idempotency rule (409 on duplicate)
+        belongs to the service layer, which checks ``exists()`` first.
         """
         raise NotImplementedError
 
@@ -47,18 +46,17 @@ class InMemoryDonationStore(DonationStore):
     """
 
     def __init__(self) -> None:
-        """Initialise an empty store."""
-        # TODO: back the store with an ordered dict keyed by event_id
-        raise NotImplementedError
+        """Initialise an empty store keyed by event_id."""
+        self._events: dict[str, DonationEvent] = {}
 
     def add(self, event: DonationEvent) -> None:  # noqa: D102 (see base class)
-        raise NotImplementedError
+        self._events[event.event_id] = event
 
     def get(self, event_id: str) -> DonationEvent | None:  # noqa: D102
-        raise NotImplementedError
+        return self._events.get(event_id)
 
     def exists(self, event_id: str) -> bool:  # noqa: D102
-        raise NotImplementedError
+        return event_id in self._events
 
     def list_all(self) -> list[DonationEvent]:  # noqa: D102
-        raise NotImplementedError
+        return list(self._events.values())
