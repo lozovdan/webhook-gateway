@@ -4,13 +4,22 @@ Red phase: DonationService method bodies are NotImplementedError stubs;
 every test below must fail until the green phase fills them in.
 
 Decisions locked here:
-    - Check order in process_donation: allowlist BEFORE duplicate — a
-      disallowed currency wins even when event_id is already stored.
+    - Check order in process_donation: replay window BEFORE allowlist
+      BEFORE duplicate — a stale event reports STALE_TIMESTAMP even when
+      its currency is disallowed or its event_id is already stored.
+    - Replay window is SYMMETRIC and the boundary is INCLUSIVE:
+      |now - timestamp| <= tolerance is accepted, strictly greater is
+      rejected. Events from the future beyond the window are as
+      suspicious as old ones (clock skew within the window is fine).
+    - The clock is INJECTED (no real time in tests); freshness compares
+      instants, not wall-clock strings — the same moment in another
+      timezone is fresh.
     - On DUPLICATE the store is not touched (first write wins at the
       service level; the store itself stays dumb last-write-wins).
     - Stats are grouped BY currency; totals use exact Decimal arithmetic.
 """
 
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -22,6 +31,11 @@ from app.store import InMemoryDonationStore
 # Test allowlist is injected, independent of app config.
 ALLOWED_CURRENCIES: set[str] = {"USD", "EUR"}
 
+# Frozen "now" returned by the injected clock; the default event timestamp
+# equals it, so events are fresh (age 0) unless a test overrides it.
+FIXED_NOW = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
+TOLERANCE = timedelta(seconds=300)
+
 
 def make_event(event_id: str = "evt_001", **overrides: object) -> DonationEvent:
     """Build a valid DonationEvent with optional field overrides."""
@@ -30,7 +44,7 @@ def make_event(event_id: str = "evt_001", **overrides: object) -> DonationEvent:
         "donor": "Alice Donor",
         "amount": "10.00",
         "currency": "USD",
-        "timestamp": "2026-06-09T12:00:00Z",
+        "timestamp": FIXED_NOW,
     }
     payload.update(overrides)
     return DonationEvent(**payload)
@@ -44,8 +58,13 @@ def store() -> InMemoryDonationStore:
 
 @pytest.fixture()
 def service(store: InMemoryDonationStore) -> DonationService:
-    """Service wired to the fresh store and the test allowlist."""
-    return DonationService(store=store, allowed_currencies=ALLOWED_CURRENCIES)
+    """Service wired to the fresh store, test allowlist and a frozen clock."""
+    return DonationService(
+        store=store,
+        allowed_currencies=ALLOWED_CURRENCIES,
+        replay_tolerance=TOLERANCE,
+        clock=lambda: FIXED_NOW,
+    )
 
 
 # process_donation
@@ -98,6 +117,111 @@ def test_process_disallowed_currency_wins_over_duplicate(
 
     assert result is ProcessResult.CURRENCY_NOT_ALLOWED
     assert len(store.list_all()) == 1
+
+
+# replay protection
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [
+        pytest.param(timedelta(0), id="exactly-now"),
+        pytest.param(-TOLERANCE, id="oldest-allowed-inclusive-boundary"),
+        pytest.param(TOLERANCE, id="newest-allowed-inclusive-boundary"),
+        pytest.param(-TOLERANCE + timedelta(seconds=1), id="just-inside-past"),
+    ],
+)
+def test_process_event_within_tolerance_is_created(
+    service: DonationService, store: InMemoryDonationStore, offset: timedelta
+) -> None:
+    """|now - timestamp| <= tolerance -> CREATED; the boundary itself passes."""
+    result = service.process_donation(
+        make_event("evt_001", timestamp=FIXED_NOW + offset)
+    )
+
+    assert result is ProcessResult.CREATED
+    assert store.exists("evt_001") is True
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [
+        pytest.param(-TOLERANCE - timedelta(seconds=1), id="too-old"),
+        pytest.param(TOLERANCE + timedelta(seconds=1), id="too-far-in-future"),
+        pytest.param(
+            -TOLERANCE - timedelta(microseconds=1), id="past-boundary-by-one-us"
+        ),
+    ],
+)
+def test_process_event_outside_tolerance_is_stale_and_not_stored(
+    service: DonationService, store: InMemoryDonationStore, offset: timedelta
+) -> None:
+    """|now - timestamp| > tolerance -> STALE_TIMESTAMP, nothing stored."""
+    result = service.process_donation(
+        make_event("evt_001", timestamp=FIXED_NOW + offset)
+    )
+
+    assert result is ProcessResult.STALE_TIMESTAMP
+    assert store.list_all() == []
+
+
+def test_stale_wins_over_disallowed_currency(
+    service: DonationService, store: InMemoryDonationStore
+) -> None:
+    """Check order: replay window BEFORE allowlist — a stale event with a
+    disallowed currency reports STALE_TIMESTAMP, not CURRENCY_NOT_ALLOWED."""
+    stale = FIXED_NOW - TOLERANCE - timedelta(seconds=1)
+
+    result = service.process_donation(
+        make_event("evt_001", currency="GBP", timestamp=stale)
+    )
+
+    assert result is ProcessResult.STALE_TIMESTAMP
+    assert store.list_all() == []
+
+
+def test_stale_wins_over_duplicate(
+    service: DonationService, store: InMemoryDonationStore
+) -> None:
+    """Check order: replay window BEFORE exists — replaying a KNOWN event_id
+    with a stale timestamp is STALE_TIMESTAMP, not DUPLICATE (that is the
+    actual replay-attack shape)."""
+    service.process_donation(make_event("evt_001"))
+    stale = FIXED_NOW - TOLERANCE - timedelta(seconds=1)
+
+    result = service.process_donation(make_event("evt_001", timestamp=stale))
+
+    assert result is ProcessResult.STALE_TIMESTAMP
+    assert len(store.list_all()) == 1
+
+
+def test_replay_check_compares_instants_not_wall_clock(
+    service: DonationService,
+) -> None:
+    """FIXED_NOW expressed in UTC+5 is the SAME instant -> fresh, CREATED."""
+    same_instant_elsewhere = FIXED_NOW.astimezone(timezone(timedelta(hours=5)))
+
+    result = service.process_donation(
+        make_event("evt_001", timestamp=same_instant_elsewhere)
+    )
+
+    assert result is ProcessResult.CREATED
+
+
+def test_default_clock_uses_real_time(store: InMemoryDonationStore) -> None:
+    """Without an injected clock the service reads real UTC time — an event
+    stamped datetime.now(UTC) is fresh. Guards the production default."""
+    service = DonationService(
+        store=store,
+        allowed_currencies=ALLOWED_CURRENCIES,
+        replay_tolerance=TOLERANCE,
+    )
+
+    result = service.process_donation(
+        make_event("evt_001", timestamp=datetime.now(UTC))
+    )
+
+    assert result is ProcessResult.CREATED
 
 
 # get / list

@@ -7,15 +7,20 @@ Decisions locked here:
       bad signature + bad payload -> 401, never 400.
     - Validation errors map to 400 (manual parsing), not FastAPI's 422.
     - ProcessResult mapping: CREATED->200, DUPLICATE->409,
-      CURRENCY_NOT_ALLOWED->400.
+      CURRENCY_NOT_ALLOWED->400, STALE_TIMESTAMP->400.
+    - A replayed (stale) event is 400, NOT 401: its signature IS valid, so
+      it is a payload rejection, not an authentication failure.
 """
 
 import json
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import (
+    FIXED_NOW,
+    TEST_REPLAY_TOLERANCE_SECONDS,
     WEBHOOK_PATH,
     make_payload,
     payload_bytes,
@@ -57,6 +62,9 @@ def test_disallowed_currency_returns_400(client: TestClient) -> None:
         pytest.param({"amount": "-5.00"}, None, id="negative-amount"),
         pytest.param({"currency": "usd"}, None, id="bad-currency-format"),
         pytest.param({}, "donor", id="missing-required-field"),
+        pytest.param(
+            {"timestamp": "2026-06-09T12:00:00"}, None, id="naive-timestamp"
+        ),
     ],
 )
 def test_invalid_payload_with_valid_signature_returns_400(
@@ -92,6 +100,39 @@ def test_broken_json_with_valid_signature_returns_400(
     response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "offset_seconds",
+    [
+        pytest.param(-(TEST_REPLAY_TOLERANCE_SECONDS + 1), id="too-old"),
+        pytest.param(TEST_REPLAY_TOLERANCE_SECONDS + 1, id="too-far-in-future"),
+    ],
+)
+def test_timestamp_outside_tolerance_returns_400(
+    client: TestClient, offset_seconds: int
+) -> None:
+    """Correctly signed event outside the replay window -> 400.
+
+    Not 401: the signature is cryptographically valid, so this is a payload
+    rejection. The app clock is frozen at FIXED_NOW (see conftest), so the
+    window is checked deterministically."""
+    stamp = (FIXED_NOW + timedelta(seconds=offset_seconds)).isoformat()
+    body = payload_bytes("evt_001", timestamp=stamp)
+
+    response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
+
+    assert response.status_code == 400
+
+
+def test_timestamp_on_tolerance_boundary_returns_200(client: TestClient) -> None:
+    """An event exactly tolerance old is still accepted (inclusive boundary)."""
+    stamp = (FIXED_NOW - timedelta(seconds=TEST_REPLAY_TOLERANCE_SECONDS)).isoformat()
+    body = payload_bytes("evt_001", timestamp=stamp)
+
+    response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
+
+    assert response.status_code == 200
 
 
 def test_wrong_signature_returns_401(client: TestClient) -> None:

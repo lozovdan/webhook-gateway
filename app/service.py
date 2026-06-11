@@ -6,11 +6,18 @@ are *not* HTTP concerns: the currency allowlist, idempotency (a repeated
 knows nothing about HTTP status codes.
 """
 
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 
 from app.models import CurrencyTotal, DonationEvent, StatsResponse
 from app.store import DonationStore
+
+
+def _utc_now() -> datetime:
+    """Default clock: the current time as an aware UTC datetime."""
+    return datetime.now(UTC)
 
 
 class ProcessResult(Enum):
@@ -19,21 +26,37 @@ class ProcessResult(Enum):
     CREATED = "created"
     DUPLICATE = "duplicate"
     CURRENCY_NOT_ALLOWED = "currency_not_allowed"
+    STALE_TIMESTAMP = "stale_timestamp"
 
 
 class DonationService:
     """Business rules: allowlist, idempotency, aggregation."""
 
-    def __init__(self, store: DonationStore, allowed_currencies: set[str]) -> None:
+    def __init__(
+        self,
+        store: DonationStore,
+        allowed_currencies: set[str],
+        *,
+        replay_tolerance: timedelta,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         """Create the service.
 
         Args:
             store: Storage backend to read from and write to.
             allowed_currencies: Injected allowlist (service never reads
                 config directly — keeps it unit-testable).
+            replay_tolerance: Maximum |now - event.timestamp| accepted;
+                events outside this symmetric window are rejected as
+                replays. Required — the default lives in config, not here.
+            clock: Source of "now" (must return an aware datetime).
+                Injectable so time-based tests are deterministic;
+                ``None`` means real UTC time.
         """
         self._store = store
         self._allowed_currencies = allowed_currencies
+        self._replay_tolerance = replay_tolerance
+        self._clock = clock if clock is not None else _utc_now
 
     def process_donation(self, event: DonationEvent) -> ProcessResult:
         """Apply business rules to a validated event and store it if new.

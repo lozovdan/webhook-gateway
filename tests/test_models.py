@@ -14,9 +14,13 @@ Design decisions locked in by these tests:
       rejected by TYPE.
     - event_id and donor must be non-empty AFTER stripping: a whitespace-only
       string is as invalid as an empty one.
+    - timestamp must be timezone-AWARE. A naive timestamp is rejected at the
+      model boundary, not silently assumed to be UTC: comparing naive and
+      aware datetimes raises TypeError, and guessing the sender's zone would
+      silently shift the replay window. Any explicit offset is fine.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -159,3 +163,26 @@ def test_donationevent_float_amount_is_rejected(amount: float) -> None:
         DonationEvent(**_payload(amount=amount))
 
     assert "amount" in _error_fields(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        pytest.param("2026-06-09T12:00:00", id="naive-iso-string"),
+        pytest.param(datetime(2026, 6, 9, 12, 0, 0), id="naive-datetime-object"),
+    ],
+)
+def test_donationevent_naive_timestamp_is_rejected(timestamp: object) -> None:
+    """A timestamp without timezone info is a contract violation, not 'UTC'."""
+    with pytest.raises(ValidationError) as exc_info:
+        DonationEvent(**_payload(timestamp=timestamp))
+
+    assert "timestamp" in _error_fields(exc_info.value)
+
+
+def test_donationevent_timestamp_with_any_utc_offset_is_accepted() -> None:
+    """Aware non-UTC timestamps are valid and denote the correct instant."""
+    event = DonationEvent(**_payload(timestamp="2026-06-09T14:00:00+02:00"))
+
+    assert event.timestamp.utcoffset() is not None
+    assert event.timestamp == datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)

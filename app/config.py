@@ -12,9 +12,14 @@ from dataclasses import dataclass
 # Environment variable names (kept as constants to avoid typos across modules).
 ENV_WEBHOOK_SECRET = "WEBHOOK_SECRET"
 ENV_ALLOWED_CURRENCIES = "ALLOWED_CURRENCIES"
+ENV_REPLAY_TOLERANCE_SECONDS = "REPLAY_TOLERANCE_SECONDS"
 
 # Fallback allowlist used when ALLOWED_CURRENCIES is not provided.
 DEFAULT_ALLOWED_CURRENCIES: frozenset[str] = frozenset({"USD", "EUR", "CZK"})
+
+# Fallback replay window (Stripe's default) when REPLAY_TOLERANCE_SECONDS
+# is not provided.
+DEFAULT_REPLAY_TOLERANCE_SECONDS: int = 300
 
 
 @dataclass(frozen=True)
@@ -24,10 +29,13 @@ class Settings:
     Attributes:
         webhook_secret: Shared secret used to verify the ``X-Signature`` HMAC.
         allowed_currencies: Uppercase ISO currency codes accepted in payloads.
+        replay_tolerance_seconds: Maximum allowed |now - event.timestamp|;
+            events outside this symmetric window are rejected as replays.
     """
 
     webhook_secret: str
     allowed_currencies: frozenset[str]
+    replay_tolerance_seconds: int = DEFAULT_REPLAY_TOLERANCE_SECONDS
 
 
 def get_settings() -> Settings:

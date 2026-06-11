@@ -11,6 +11,9 @@ Status codes for ``POST /webhooks/donation``:
     409 — duplicate ``event_id`` (idempotency)
 """
 
+from collections.abc import Callable
+from datetime import datetime, timedelta
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import ValidationError
 
@@ -23,11 +26,16 @@ from app.store import InMemoryDonationStore
 SIGNATURE_HEADER = "X-Signature"
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> FastAPI:
     """Build the application: fresh store/service per instance.
 
     Args:
         settings: Runtime config; ``None`` falls back to env via get_settings().
+        clock: Source of "now" passed to the service; ``None`` means real
+            UTC time. Injectable so API tests control time deterministically.
     """
     if settings is None:
         settings = get_settings()
@@ -35,7 +43,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Webhook Gateway")
     store = InMemoryDonationStore()
     service = DonationService(
-        store=store, allowed_currencies=set(settings.allowed_currencies)
+        store=store,
+        allowed_currencies=set(settings.allowed_currencies),
+        replay_tolerance=timedelta(seconds=settings.replay_tolerance_seconds),
+        clock=clock,
     )
     secret = settings.webhook_secret
 
