@@ -6,8 +6,7 @@ live here and are injected wherever they are needed (signature verification,
 payload validation).
 """
 
-from __future__ import annotations
-
+import os
 from dataclasses import dataclass
 
 # Environment variable names (kept as constants to avoid typos across modules).
@@ -34,13 +33,27 @@ class Settings:
 def get_settings() -> Settings:
     """Build a :class:`Settings` instance from the process environment.
 
-    Reads ``WEBHOOK_SECRET`` (required) and ``ALLOWED_CURRENCIES`` (optional,
-    comma-separated; falls back to :data:`DEFAULT_ALLOWED_CURRENCIES`).
-
-    Returns:
-        A populated, immutable :class:`Settings`.
+    Reads ``WEBHOOK_SECRET`` (required, non-empty) and ``ALLOWED_CURRENCIES``
+    (optional, comma-separated, normalised with strip+upper; unset falls back
+    to :data:`DEFAULT_ALLOWED_CURRENCIES`). No caching: env is read on every
+    call — it runs once at app startup, and tests stay isolated for free.
 
     Raises:
-        RuntimeError: If a required variable is missing.
+        RuntimeError: If the secret is missing/empty, or if
+            ``ALLOWED_CURRENCIES`` is set but parses to an empty set.
     """
-    raise NotImplementedError
+    secret = os.environ.get(ENV_WEBHOOK_SECRET, "").strip()
+    if not secret:
+        raise RuntimeError(f"{ENV_WEBHOOK_SECRET} must be set and non-empty")
+
+    raw = os.environ.get(ENV_ALLOWED_CURRENCIES)
+    if raw is None:
+        currencies = DEFAULT_ALLOWED_CURRENCIES
+    else:
+        currencies = frozenset(
+            item.strip().upper() for item in raw.split(",") if item.strip()
+        )
+        if not currencies:
+            raise RuntimeError(f"{ENV_ALLOWED_CURRENCIES} is set but empty")
+
+    return Settings(webhook_secret=secret, allowed_currencies=currencies)

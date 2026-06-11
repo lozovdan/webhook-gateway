@@ -91,6 +91,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-# Module-level ASGI app for ``uvicorn app.main:app``.
-# TODO: enable once get_settings() (config layer) is implemented:
-# app = create_app()
+def __getattr__(name: str) -> FastAPI:
+    """Lazy module-level ``app`` for ``uvicorn app.main:app`` (PEP 562).
+
+    Built from env only on first attribute access, so importing this module
+    (tests, CI) never requires WEBHOOK_SECRET to be set.
+    """
+    if name == "app":
+        return create_app()
+    raise AttributeError(name)
