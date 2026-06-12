@@ -1,15 +1,10 @@
 """FastAPI application factory and HTTP routes.
 
-Routes are intentionally thin: they parse/authenticate the request and
-delegate all decisions to :class:`app.service.DonationService`. The mapping
-from domain outcomes to HTTP status codes lives here.
+Routes are thin: they authenticate, parse, and map domain outcomes to HTTP
+status codes, delegating all decisions to :class:`app.service.DonationService`.
 
-Status codes for ``POST /webhooks/donation``:
-    200 — accepted and stored
-    400 — invalid payload, disallowed currency, or timestamp outside the
-          replay window
-    401 — missing/invalid HMAC signature (checked BEFORE payload parsing)
-    409 — duplicate ``event_id`` (idempotency)
+POST /webhooks/donation: 200 stored; 400 bad payload/currency/stale
+timestamp; 401 bad signature; 409 duplicate.
 """
 
 from collections.abc import Callable
@@ -31,12 +26,10 @@ def create_app(
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
-    """Build the application: fresh store/service per instance.
+    """Build the app with a fresh store/service per instance.
 
-    Args:
-        settings: Runtime config; ``None`` falls back to env via get_settings().
-        clock: Source of "now" passed to the service; ``None`` means real
-            UTC time. Injectable so API tests control time deterministically.
+    ``settings`` falls back to env; ``clock`` is injectable so API tests
+    control time deterministically (None means real UTC time).
     """
     if settings is None:
         settings = get_settings()
@@ -52,12 +45,9 @@ def create_app(
     secret = settings.webhook_secret
 
     async def verified_donation(request: Request) -> DonationEvent:
-        """Auth + parse dependency.
-
-        Order: HMAC over the RAW body (missing/bad header -> 401) BEFORE
-        manual model_validate_json (ValidationError -> 400, not FastAPI's
-        default 422 — we control the code). Broken/empty JSON also raises
-        ValidationError, so it lands on 400 too.
+        """Auth then parse. HMAC over the RAW body first (missing/bad -> 401),
+        then manual model_validate_json so validation errors map to 400, not
+        FastAPI's default 422. Broken/empty JSON also lands on 400.
         """
         raw = await request.body()
         signature = request.headers.get(SIGNATURE_HEADER)
@@ -72,8 +62,6 @@ def create_app(
     async def receive_donation(
         event: DonationEvent = Depends(verified_donation),
     ) -> dict[str, str]:
-        """Map ProcessResult to HTTP: CREATED->200, DUPLICATE->409,
-        CURRENCY_NOT_ALLOWED->400, STALE_TIMESTAMP->400."""
         result = service.process_donation(event)
         if result is ProcessResult.DUPLICATE:
             raise HTTPException(status_code=409, detail="duplicate event_id")
@@ -108,10 +96,8 @@ def create_app(
 
 
 def __getattr__(name: str) -> FastAPI:
-    """Lazy module-level ``app`` for ``uvicorn app.main:app`` (PEP 562).
-
-    Built from env only on first attribute access, so importing this module
-    (tests, CI) never requires WEBHOOK_SECRET to be set.
+    """Lazy module-level ``app`` for ``uvicorn app.main:app``, so
+    importing this module never requires WEBHOOK_SECRET to be set.
     """
     if name == "app":
         return create_app()

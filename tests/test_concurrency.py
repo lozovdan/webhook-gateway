@@ -1,24 +1,11 @@
-"""Concurrency tests: idempotency must hold under parallel delivery.
+"""Concurrency: idempotency must hold under parallel delivery.
 
-Webhook providers retry aggressively and deliver in parallel, so two copies
-of the same event can arrive at the same time. Idempotency that only holds
-for sequential calls is not idempotency.
-
-Red phase: process_donation does check-then-act (store.exists(), then
-store.add()) — a TOCTOU race. The async route currently masks it (a single
-event loop thread never interleaves the two calls), but the service must not
-depend on its caller's threading model: a sync route in FastAPI's threadpool
-or a second worker thread would expose it.
-
-The race is reproduced DETERMINISTICALLY:
-``BarrierStore.exists()`` blocks until every racing thread has finished its
-check, so all of them observe "absent" before any write happens, the
-worst-case interleaving on every single run.
-
-Decision locked here: the atomic "insert if new" belongs to the STORE
-(``add_if_new``, the analogue of a DB unique-constraint INSERT); the service
-maps its outcome to DUPLICATE. exists()+add() in the service can never be
-made race-free from the outside.
+Webhook providers retry and deliver in parallel, so two copies of one event
+can arrive at once. ``BarrierStore`` reproduces the worst-case interleaving
+deterministically: every racing thread finishes its existence check before
+any write, so the old check-then-act (exists() + add()) lets them all observe
+"absent" and write. The fix is the store's atomic ``add_if_new``; the service
+maps its outcome to DUPLICATE.
 """
 
 import threading
@@ -33,22 +20,18 @@ THREADS = 8
 
 
 class BarrierStore(InMemoryDonationStore):
-    """Store that forces the worst-case interleaving for check-then-act.
-
-    ``exists()`` waits until ALL racing threads have finished their check
-    before returning, so every caller sees the event as absent before any
-    of them gets to write. The timeout keeps the suite from hanging when
-    fewer than ``parties`` callers ever reach exists() (e.g. once the
-    implementation is atomic and no longer calls it); the resulting
-    BrokenBarrierError is suppressed because in that case there is no
-    interleaving left to force.
+    """Forces the worst-case interleaving: ``exists()`` blocks until all
+    racing threads have finished their check, so every caller sees the event
+    as absent before any write. The timeout + suppressed BrokenBarrierError
+    keep the suite from hanging once the implementation is atomic and no
+    longer calls exists().
     """
 
     def __init__(self, parties: int) -> None:
         super().__init__()
         self._barrier = threading.Barrier(parties)
 
-    def exists(self, event_id: str) -> bool:  # noqa: D102 (see class docstring)
+    def exists(self, event_id: str) -> bool:  # noqa: D102
         result = super().exists(event_id)
         with suppress(threading.BrokenBarrierError):
             self._barrier.wait(timeout=2.0)

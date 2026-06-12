@@ -37,6 +37,3 @@ __pycache__
 Dockerfile
 .dockerignore
 compose.yaml
-
-# Agent config
-CLAUDE.md

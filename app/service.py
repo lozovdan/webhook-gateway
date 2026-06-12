@@ -1,13 +1,8 @@
-"""Business logic for donation processing.
+"""Business logic for donation processing: replay window, currency allowlist,
+idempotency and stats aggregation. Knows nothing about HTTP.
 
-This layer sits between the HTTP routes and the store. It owns the rules that
-are *not* HTTP concerns: the replay window (an event whose timestamp is too
-far from "now" in either direction is rejected), the currency allowlist,
-idempotency (a repeated ``event_id`` is not stored twice) and statistics
-aggregation. The service knows nothing about HTTP status codes.
-
-Time is read through an injected ``clock`` callable, so time-dependent rules
-are deterministic in tests.
+Time is read through an injected ``clock`` so time-dependent rules are
+deterministic in tests.
 """
 
 from collections.abc import Callable
@@ -20,7 +15,6 @@ from app.store import DonationStore
 
 
 def _utc_now() -> datetime:
-    """Default clock: the current time as an aware UTC datetime."""
     return datetime.now(UTC)
 
 
@@ -44,37 +38,24 @@ class DonationService:
         replay_tolerance: timedelta,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Create the service.
-
-        Args:
-            store: Storage backend to read from and write to.
-            allowed_currencies: Injected allowlist (service never reads
-                config directly — keeps it unit-testable).
-            replay_tolerance: Maximum |now - event.timestamp| accepted;
-                events outside this symmetric window are rejected as
-                replays. Required — the default lives in config, not here.
-            clock: Source of "now" (must return an aware datetime).
-                Injectable so time-based tests are deterministic;
-                ``None`` means real UTC time.
-        """
+        # allowlist and tolerance are injected, not read from config here, so
+        # the service stays unit-testable. clock defaults to real UTC time;
+        # tests inject a frozen one for determinism.
         self._store = store
         self._allowed_currencies = allowed_currencies
         self._replay_tolerance = replay_tolerance
         self._clock = clock if clock is not None else _utc_now
 
     def process_donation(self, event: DonationEvent) -> ProcessResult:
-        """Apply business rules to a validated event and store it if new.
+        """Apply the rules in order and store the event if new.
 
-        Check order: replay window BEFORE allowlist BEFORE duplicate — a
-        stale event reports STALE_TIMESTAMP even when its currency is
-        disallowed or its event_id is already stored (a replayed known
-        event is the actual attack shape). The window is symmetric with an
-        inclusive boundary: |now - timestamp| <= tolerance is accepted.
+        Order is deliberate: replay window before allowlist before duplicate.
+        A replayed known event is the real attack shape, so a stale timestamp
+        wins even over a disallowed currency or an already-stored id. The
+        window is symmetric and inclusive: |now - timestamp| <= tolerance.
 
-        The insert is delegated to the ATOMIC store.add_if_new(), not
-        exists()+add(), which is check-then-act and loses events under
-        parallel delivery. First write wins; DUPLICATE never touches
-        the stored event.
+        Insertion uses the atomic ``store.add_if_new`` (not exists()+add(),
+        which races under parallel delivery); first write wins.
         """
         if abs(self._clock() - event.timestamp) > self._replay_tolerance:
             return ProcessResult.STALE_TIMESTAMP
@@ -85,7 +66,7 @@ class DonationService:
         return ProcessResult.CREATED
 
     def get_donation(self, event_id: str) -> DonationEvent | None:
-        """Return a single donation by id, or ``None`` if not found."""
+        """Return a single donation by id, or ``None``."""
         return self._store.get(event_id)
 
     def list_donations(self) -> list[DonationEvent]:

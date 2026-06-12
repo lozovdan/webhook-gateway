@@ -1,22 +1,14 @@
 """Unit tests for app.service (DonationService).
 
-Red phase: DonationService method bodies are NotImplementedError stubs;
-every test below must fail until the green phase fills them in.
-
-Decisions locked here:
-    - Check order in process_donation: replay window BEFORE allowlist
-      BEFORE duplicate — a stale event reports STALE_TIMESTAMP even when
-      its currency is disallowed or its event_id is already stored.
-    - Replay window is SYMMETRIC and the boundary is INCLUSIVE:
-      |now - timestamp| <= tolerance is accepted, strictly greater is
-      rejected. Events from the future beyond the window are as
-      suspicious as old ones (clock skew within the window is fine).
-    - The clock is INJECTED (no real time in tests); freshness compares
-      instants, not wall-clock strings — the same moment in another
-      timezone is fresh.
-    - On DUPLICATE the store is not touched (first write wins at the
-      service level; the store itself stays dumb last-write-wins).
-    - Stats are grouped BY currency; totals use exact Decimal arithmetic.
+Decisions exercised:
+- Check order in process_donation: replay window before allowlist before
+  duplicate, a stale event reports STALE_TIMESTAMP even when its currency is
+  disallowed or its event_id is already stored.
+- Replay window is symmetric and inclusive: |now - timestamp| <= tolerance.
+- The clock is injected; freshness compares instants, not wall-clock strings,
+  so the same moment in another timezone is fresh.
+- On DUPLICATE the store is untouched (first write wins).
+- Stats group by currency with exact Decimal arithmetic.
 """
 
 from datetime import UTC, datetime, timedelta, timezone
@@ -110,8 +102,8 @@ def test_process_disallowed_currency_is_rejected_and_not_stored(
 def test_process_disallowed_currency_wins_over_duplicate(
     service: DonationService, store: InMemoryDonationStore
 ) -> None:
-    """Check order: allowlist BEFORE exists — bad currency on a known
-    event_id reports CURRENCY_NOT_ALLOWED, not DUPLICATE."""
+    """Check order: allowlist BEFORE exists; bad currency on a known
+    event_id does not report DUPLICATE."""
     service.process_donation(make_event("evt_001"))
 
     result = service.process_donation(make_event("evt_001", currency="GBP"))
@@ -169,8 +161,8 @@ def test_process_event_outside_tolerance_is_stale_and_not_stored(
 def test_stale_wins_over_disallowed_currency(
     service: DonationService, store: InMemoryDonationStore
 ) -> None:
-    """Check order: replay window BEFORE allowlist — a stale event with a
-    disallowed currency reports STALE_TIMESTAMP, not CURRENCY_NOT_ALLOWED."""
+    """Check order: replay window BEFORE allowlist; a stale event with a
+    disallowed currency does not report CURRENCY_NOT_ALLOWED."""
     stale = FIXED_NOW - TOLERANCE - timedelta(seconds=1)
 
     result = service.process_donation(
@@ -184,9 +176,8 @@ def test_stale_wins_over_disallowed_currency(
 def test_stale_wins_over_duplicate(
     service: DonationService, store: InMemoryDonationStore
 ) -> None:
-    """Check order: replay window BEFORE exists — replaying a KNOWN event_id
-    with a stale timestamp is STALE_TIMESTAMP, not DUPLICATE (that is the
-    actual replay-attack shape)."""
+    """Check order: replay window BEFORE exists; replaying a KNOWN event_id
+    with a stale timestamp is not DUPLICATE."""
     service.process_donation(make_event("evt_001"))
     stale = FIXED_NOW - TOLERANCE - timedelta(seconds=1)
 
@@ -210,8 +201,7 @@ def test_replay_check_compares_instants_not_wall_clock(
 
 
 def test_default_clock_uses_real_time(store: InMemoryDonationStore) -> None:
-    """Without an injected clock the service reads real UTC time — an event
-    stamped datetime.now(UTC) is fresh. Guards the production default."""
+    """Without an injected clock the service reads real UTC time."""
     service = DonationService(
         store=store,
         allowed_currencies=ALLOWED_CURRENCIES,
@@ -314,8 +304,7 @@ def test_compute_stats_counts_only_created_events(service: DonationService) -> N
 def test_compute_stats_uses_exact_decimal_addition(
     service: DonationService,
 ) -> None:
-    """10.10 + 20.20 must be exactly Decimal('30.30') — float arithmetic
-    would yield 30.299999999999997 and fail this equality."""
+    """10.10 + 20.20 must be exactly Decimal('30.30')."""
     service.process_donation(make_event("evt_001", amount="10.10"))
     service.process_donation(make_event("evt_002", amount="20.20"))
 

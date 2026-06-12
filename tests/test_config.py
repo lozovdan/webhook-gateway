@@ -41,7 +41,7 @@ def test_missing_or_blank_secret_raises(
     monkeypatch: pytest.MonkeyPatch, secret: str | None
 ) -> None:
     """The service must not start without a real secret. The message names
-    the variable to set, that text is the operator's contract."""
+    the variable to set that text is the operator's contract."""
     if secret is None:
         monkeypatch.delenv(ENV_WEBHOOK_SECRET, raising=False)
     else:
@@ -150,7 +150,7 @@ def test_replay_tolerance_invalid_raises(
         get_settings()
 
 
-# --- lazy module-level app (PEP 562) -----------------------------------------
+# lazy module-level app
 
 
 def test_module_level_app_builds_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

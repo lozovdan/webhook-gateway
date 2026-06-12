@@ -1,16 +1,9 @@
 """Shared fixtures and helpers for the API-level tests.
 
-Isolation: ``create_app()`` builds a NEW store inside every app instance and
-the ``app`` fixture is function-scoped — each test gets fresh state.
-
-Determinism: the test app gets an injected clock frozen at ``FIXED_NOW`` and
-the default payload timestamp IS ``FIXED_NOW`` — every event is "fresh"
-(age 0) unless a test overrides the timestamp on purpose. No test depends
+Each test gets fresh state (function-scoped ``app``, a new store per instance)
+and a clock frozen at ``FIXED_NOW``. The default payload timestamp equals it,
+so events are "fresh" unless a test overrides the timestamp. No test depends
 on the real wall clock.
-
-Helpers are plain functions (importable as ``from tests.conftest import ...``):
-``sign`` produces a valid X-Signature for exact bytes under the test secret;
-``post_donation`` posts a correctly signed valid event.
 """
 
 import json

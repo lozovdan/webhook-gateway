@@ -1,8 +1,5 @@
-"""Donation storage.
-
-Defines the storage *interface* (so the persistence layer can later be
-swapped for a real database) and a simple in-memory implementation backed by
-a dict, which is enough for this demo and for fast, isolated tests.
+"""Donation storage: an abstract interface (swappable for a real DB later)
+and a dict-backed in-memory implementation for the demo and tests.
 """
 
 import threading
@@ -16,73 +13,63 @@ class DonationStore(ABC):
 
     @abstractmethod
     def add(self, event: DonationEvent) -> None:
-        """Persist a donation event.
+        """Persist an event, overwriting any existing one with the same id.
 
-        A duplicate event_id OVERWRITES the stored event (last-write-wins):
-        plain writes stay dumb. The idempotency rule (409 on duplicate)
-        belongs to the service layer, which inserts via ``add_if_new()``.
+        Plain writes stay dumb; the 409-on-duplicate rule is the service's
+        job via ``add_if_new``.
         """
         raise NotImplementedError
 
     @abstractmethod
     def add_if_new(self, event: DonationEvent) -> bool:
-        """Atomically persist ``event`` unless its event_id is already stored.
+        """Atomically store ``event`` unless its id already exists.
 
-        The storage analogue of an INSERT under a unique constraint: the
-        existence check and the write are one indivisible operation, safe
-        under concurrent callers. Returns ``True`` if the event was stored,
-        ``False`` if the event_id already existed (the stored event is left
-        untouched).
-
-        The pair ``exists()`` + ``add()`` is NOT a substitute: it is
-        check-then-act, and two concurrent callers can both observe
-        "absent" and both write.
+        The analogue of an INSERT under a unique constraint: check and write
+        are one indivisible step, so two concurrent callers can't both win.
+        Returns True if stored, False if the id was already present (existing
+        event left untouched). ``exists()`` + ``add()`` is NOT equivalent, it
+        is check-then-act and races.
         """
         raise NotImplementedError
 
     @abstractmethod
     def get(self, event_id: str) -> DonationEvent | None:
-        """Return the donation with ``event_id`` or ``None`` if absent."""
+        """Return the event with ``event_id`` or ``None``."""
         raise NotImplementedError
 
     @abstractmethod
     def exists(self, event_id: str) -> bool:
-        """Return whether a donation with ``event_id`` is already stored."""
+        """Whether an event with ``event_id`` is stored."""
         raise NotImplementedError
 
     @abstractmethod
     def list_all(self) -> list[DonationEvent]:
-        """Return all stored donations (insertion order)."""
+        """Return all stored events in insertion order."""
         raise NotImplementedError
 
 
 class InMemoryDonationStore(DonationStore):
-    """Dict-backed, non-persistent implementation of :class:`DonationStore`.
-
-    Suitable for the demo and for tests, where each test gets a fresh store.
-    """
+    """Dict-backed, non-persistent store. Each test gets a fresh instance."""
 
     def __init__(self) -> None:
-        """Initialise an empty store keyed by event_id."""
         self._events: dict[str, DonationEvent] = {}
-        # Makes add_if_new's check+write indivisible.
         self._lock = threading.Lock()
 
-    def add(self, event: DonationEvent) -> None:  # noqa: D102 (see base class)
+    def add(self, event: DonationEvent) -> None:
         self._events[event.event_id] = event
 
-    def add_if_new(self, event: DonationEvent) -> bool:  # noqa: D102
+    def add_if_new(self, event: DonationEvent) -> bool:
         with self._lock:
             if event.event_id in self._events:
                 return False
             self._events[event.event_id] = event
             return True
 
-    def get(self, event_id: str) -> DonationEvent | None:  # noqa: D102
+    def get(self, event_id: str) -> DonationEvent | None:
         return self._events.get(event_id)
 
-    def exists(self, event_id: str) -> bool:  # noqa: D102
+    def exists(self, event_id: str) -> bool:
         return event_id in self._events
 
-    def list_all(self) -> list[DonationEvent]:  # noqa: D102
+    def list_all(self) -> list[DonationEvent]:
         return list(self._events.values())

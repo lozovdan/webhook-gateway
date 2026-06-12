@@ -1,9 +1,4 @@
-"""Unit tests for app.signature (HMAC generation/verification).
-
-Red phase (TDD): these tests describe the contract of generate_signature /
-verify_signature before the implementation exists. They are expected to fail
-with NotImplementedError until the signature layer is implemented.
-"""
+"""Unit tests for app.signature (HMAC generation/verification)."""
 
 from collections.abc import Callable
 

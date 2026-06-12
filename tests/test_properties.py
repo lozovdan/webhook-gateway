@@ -1,21 +1,14 @@
-"""Property-based tests (hypothesis): invariants that hold for ALL inputs.
+"""Property-based tests (hypothesis): invariants over arbitrary inputs.
 
-The example-based suites pin specific, human-chosen cases. These tests state
-invariants over arbitrary inputs and let hypothesis search for a
-counterexample, then shrink it to a minimal repro.
+These state invariants and let hypothesis search for (and shrink)
+a counterexample. Scope is the two pure-logic hotspots:
+- HMAC signatures: a round-trip always verifies; a different body/secret or
+  garbage in the header never verifies and never raises (fail closed).
+- The money contract: every positive 2-dp decimal string is accepted exactly
+  and survives a JSON round-trip; every float is rejected.
 
-Scope is the two pure-logic hotspots:
-    - HMAC signatures (app/signature.py): round-trip always verifies;
-      a different body, a different secret or arbitrary garbage in the
-      header never verifies and never raises (fail closed).
-    - The money contract (app/models.py): every positive 2-dp decimal sent
-      as a string is accepted EXACTLY; every float is rejected; a model
-      survives a JSON round-trip identically (Decimal serialized as a JSON
-      string, never a float).
-
-Note on assume(x != y): HMAC-SHA256 collisions between different inputs are
-possible in principle; the tests treat them as impossible in practice, which
-is exactly the property the signature scheme relies on.
+assume(x != y) treats HMAC collisions between different inputs as impossible
+in practice, which is exactly the property the scheme relies on.
 """
 
 from decimal import Decimal

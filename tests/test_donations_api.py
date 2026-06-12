@@ -1,7 +1,6 @@
 """Integration tests for GET /donations, GET /donations/{event_id}, /health.
 
-Red phase: route bodies are NotImplementedError stubs.
-Decision locked: Decimal amounts serialise to JSON STRINGS ("10.00").
+Decimal amounts serialise to JSON strings ("10.00").
 """
 
 from fastapi.testclient import TestClient

@@ -1,8 +1,7 @@
 """Integration tests for GET /stats (aggregation over HTTP).
 
-Red phase: route bodies are NotImplementedError stubs.
-Decision locked: Decimal totals serialise to JSON STRINGS ("30.30") —
-exactness survives the HTTP boundary, no float on the wire.
+Decimal totals serialise to JSON strings ("30.30"). Exactness survives the
+HTTP boundary.
 """
 
 from fastapi.testclient import TestClient
@@ -34,7 +33,7 @@ def test_stats_groups_by_currency(client: TestClient) -> None:
 
 
 def test_stats_decimal_precision_over_http(client: TestClient) -> None:
-    """10.10 + 20.20 arrives as exactly "30.30" — float would corrupt it."""
+    """10.10 + 20.20 arrives as exactly "30.30"."""
     post_donation(client, "evt_001", amount="10.10")
     post_donation(client, "evt_002", amount="20.20")
 

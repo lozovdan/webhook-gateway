@@ -1,16 +1,9 @@
 """Unit tests for app.store (InMemoryDonationStore).
 
-Red phase: the method bodies are NotImplementedError stubs; every test below
-must fail with NotImplementedError until the green phase fills them in.
-
-Contract decisions locked here:
-    - ``add()`` with a duplicate event_id simply OVERWRITES (dict
-      semantics): plain writes stay dumb.
-    - ``add_if_new()`` is the ATOMIC insert (first write wins, returns
-      whether it stored), the storage analogue of a unique-constraint
-      INSERT. Atomicity lives in the store because only the store can make
-      check+write indivisible; the business decision "duplicate -> 409"
-      still lives in the service.
+``add()`` with a duplicate event_id overwrites (dict semantics).
+``add_if_new()`` is the atomic insert (first write wins, returns whether it
+stored). Atomicity lives in the store; the "duplicate -> 409" decision lives
+in the service.
 """
 
 from typing import Any
@@ -89,9 +82,9 @@ def test_list_all_returns_all_events_in_insertion_order(
 
 
 def test_add_duplicate_event_id_overwrites(store: InMemoryDonationStore) -> None:
-    """Duplicate event_id overwrites (last-write-wins), no error, no growth.
+    """Duplicate event_id overwrites (last-write-wins).
 
-    The store does NOT enforce idempotency: deciding "this is a duplicate"
+    The store does NOT enforce idempotency: identifying a duplicate
     (HTTP 409) is the service's job via exists() before add().
     """
     store.add(make_event("evt_001", donor="Alice Donor"))

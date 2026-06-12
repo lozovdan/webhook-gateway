@@ -1,15 +1,11 @@
 """Integration tests for POST /webhooks/donation.
 
-Red phase: the dependency and route bodies are NotImplementedError stubs.
-
-Decisions locked here:
-    - The HMAC is verified over the RAW body BEFORE payload parsing:
-      bad signature + bad payload -> 401, never 400.
-    - Validation errors map to 400 (manual parsing), not FastAPI's 422.
-    - ProcessResult mapping: CREATED->200, DUPLICATE->409,
-      CURRENCY_NOT_ALLOWED->400, STALE_TIMESTAMP->400.
-    - A replayed (stale) event is 400, NOT 401: its signature IS valid, so
-      it is a payload rejection, not an authentication failure.
+Decisions exercised here:
+- HMAC is verified over the RAW body BEFORE parsing, so bad signature + bad
+  payload is 401, never 400.
+- Validation errors map to 400 (manual parsing), not FastAPI's default 422.
+- A replayed (stale) event is 400, not 401: its signature is valid, so it is
+  a payload rejection, not an auth failure.
 """
 
 import json
@@ -98,7 +94,7 @@ def test_broken_json_with_valid_signature_returns_400(
 ) -> None:
     """Syntactically broken/empty body, correctly signed -> 400.
 
-    An HMAC over b"" is mathematically valid (see test_signature), so the
+    An HMAC over b"" is mathematically valid, so the
     auth step passes and the failure MUST come from parsing, not 401.
     """
     response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
@@ -119,7 +115,7 @@ def test_timestamp_outside_tolerance_returns_400(
     """Correctly signed event outside the replay window -> 400.
 
     Not 401: the signature is cryptographically valid, so this is a payload
-    rejection. The app clock is frozen at FIXED_NOW (see conftest), so the
+    rejection. The app clock is frozen at FIXED_NOW, so the
     window is checked deterministically."""
     stamp = (FIXED_NOW + timedelta(seconds=offset_seconds)).isoformat()
     body = payload_bytes("evt_001", timestamp=stamp)

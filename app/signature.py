@@ -1,9 +1,7 @@
-"""HMAC signature generation and verification.
+"""HMAC-SHA256 over the raw request body, keyed by a shared secret.
 
-Webhook authenticity is proven with an HMAC-SHA256 over the *raw* request
-body using a shared secret. The signature is transported in the
-``X-Signature`` header. Verification must be constant-time to avoid timing
-side channels.
+Verification is constant-time to avoid leaking how much of the signature
+matched (a timing side channel).
 """
 
 from __future__ import annotations
@@ -13,33 +11,15 @@ import hmac
 
 
 def generate_signature(body: bytes, secret: str) -> str:
-    """Compute the hex-encoded HMAC-SHA256 of ``body``.
-
-    Args:
-        body: The raw request body bytes that were/are signed.
-        secret: The shared secret key.
-
-    Returns:
-        Lowercase hex digest of the HMAC-SHA256.
-    """
+    """Return the lowercase hex HMAC-SHA256 of ``body`` under ``secret``."""
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
 def verify_signature(body: bytes, secret: str, signature: str) -> bool:
-    """Check a provided signature against the expected one.
+    """Constant-time check of ``signature`` against the expected digest.
 
-    Compares using :func:`hmac.compare_digest` so that timing does not leak
-    how much of the signature matched. Any invalid or garbage input in
-    ``signature`` (non-hex, empty string, wrong length) must result in a
-    ``False`` return value rather than a raised exception.
-
-    Args:
-        body: The raw request body bytes.
-        secret: The shared secret key.
-        signature: The signature received in the ``X-Signature`` header.
-
-    Returns:
-        ``True`` if the signature is valid, ``False`` otherwise.
+    Fails closed: garbage input (non-hex, empty, or non-ASCII)
+    returns False instead of propagating.
     """
     try:
         expected: str = generate_signature(body, secret)

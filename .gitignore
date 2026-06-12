@@ -1,5 +1,3 @@
-CLAUDE.md
-
 # Byte-compiled / optimized / cache
 __pycache__/
 *.py[cod]

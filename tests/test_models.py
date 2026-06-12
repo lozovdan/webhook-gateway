@@ -1,23 +1,13 @@
 """Unit tests for app.models (Pydantic validation of DonationEvent).
 
-Red phase (TDD): these tests describe the validation contract before the
-constraints/validators exist on the model. The negative cases are expected to
-fail now (the stub accepts anything) and to pass once the green phase adds
-gt=0, decimal_places=2, the currency pattern, the float-rejecting strict
-type check and strip-based non-empty checks.
-
-Design decisions locked in by these tests:
-    - currency is validated for FORMAT only (exactly 3 uppercase A-Z letters);
-      lowercase is REJECTED, not auto-normalised. Allowlist membership is a
-      service-layer concern, not a model concern.
-    - amount MUST arrive as a JSON string ("10.00"). ANY float input is
-      rejected by TYPE.
-    - event_id and donor must be non-empty AFTER stripping: a whitespace-only
-      string is as invalid as an empty one.
-    - timestamp must be timezone-AWARE. A naive timestamp is rejected at the
-      model boundary, not silently assumed to be UTC: comparing naive and
-      aware datetimes raises TypeError, and guessing the sender's zone would
-      silently shift the replay window. Any explicit offset is fine.
+Contract decisions exercised:
+- currency is format-only (3 uppercase A-Z letters); lowercase is rejected,
+  not normalised. Allowlist membership is a service concern.
+- amount must arrive as a JSON string; any float is rejected by type.
+- event_id and donor must be non-empty after stripping.
+- timestamp must be timezone-aware; a naive value is rejected, not assumed
+  UTC (comparing naive/aware datetimes raises, and guessing the zone would
+  shift the replay window). Any explicit offset is fine.
 """
 
 from datetime import UTC, datetime
@@ -77,7 +67,7 @@ def test_donationevent_valid_payload_creates_typed_object() -> None:
 
 
 def test_donationevent_int_amount_is_accepted() -> None:
-    """int is part of the amount contract (str and int — yes, float — no)."""
+    """int is part of the amount contract."""
     event = DonationEvent(**_payload(amount=7))
 
     assert event.amount == Decimal("7")
@@ -160,7 +150,7 @@ def test_donationevent_blank_string_field_raises(field: str, value: str) -> None
     ],
 )
 def test_donationevent_float_amount_is_rejected(amount: float) -> None:
-    """ANY float amount is rejected by type — the string contract is enforced."""
+    """ANY float amount is rejected by type."""
     with pytest.raises(ValidationError) as exc_info:
         DonationEvent(**_payload(amount=amount))
 

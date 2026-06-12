@@ -1,8 +1,7 @@
 """Pydantic models for webhook payloads and API responses.
 
-These schemas are the validation boundary of the service: anything that does
-not satisfy the declared types and validators is rejected with HTTP 400
-before it ever reaches the business logic.
+These schemas are the validation boundary: anything that fails the declared
+types/validators is rejected (HTTP 400) before it reaches business logic.
 """
 
 from decimal import Decimal
@@ -10,30 +9,23 @@ from typing import Annotated
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
-# Strictly positive money value with at most 2 decimal places.
+# Strictly positive money, at most 2 decimal places.
 Money = Annotated[Decimal, Field(gt=0, decimal_places=2)]
 
-# ISO 4217 format: exactly 3 uppercase A-Z letters (no normalisation).
+# ISO 4217 format only: exactly 3 uppercase letters. Allowlist membership is
+# enforced in the service layer, not here.
 CurrencyCode = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 
 
 class DonationEvent(BaseModel):
     """Incoming donation webhook payload.
 
-    Contract:
-        event_id:  str, non-empty after stripping whitespace (used for
-                   idempotency).
-        donor:     str, non-empty after stripping whitespace.
-        amount:    Decimal, strictly > 0, at most 2 decimal places. MUST be
-                   supplied as a JSON string ("10.00"); float input is
-                   rejected by TYPE (strict), not merely when binary-float
-                   imprecision expands it past 2 decimal places.
-        currency:  ISO 4217 code — exactly 3 uppercase letters (format only;
-                   allowlist membership is enforced in the service layer).
-        timestamp: datetime, MUST be timezone-aware. Naive values are
-                   rejected rather than assumed UTC: comparing naive and
-                   aware datetimes raises TypeError, and guessing the
-                   sender's zone would silently shift the replay window.
+    Two non-obvious rules:
+    - ``amount`` must arrive as a JSON string ("10.00"); float is rejected by
+      type, since binary floats can't represent money exactly.
+    - ``timestamp`` must be timezone-aware. A naive value is rejected, not
+      assumed UTC: comparing naive/aware datetimes raises, and guessing the
+      sender's zone would silently shift the replay window.
     """
 
     event_id: str
@@ -45,7 +37,7 @@ class DonationEvent(BaseModel):
     @field_validator("event_id", "donor")
     @classmethod
     def _strip_and_require_non_empty(cls, value: str) -> str:
-        """Normalise to the stripped value; reject empty/whitespace-only."""
+        """Strip, and reject empty/whitespace-only."""
         stripped = value.strip()
         if not stripped:
             raise ValueError("must not be empty or whitespace-only")
@@ -54,8 +46,7 @@ class DonationEvent(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def _reject_float_amount(cls, value: object) -> object:
-        """Enforce the string contract: float is rejected by type, since
-        binary floats cannot represent money exactly (str and int are fine)."""
+        """Reject float (str and int are accepted)."""
         if isinstance(value, float):
             raise ValueError(
                 'amount must be sent as a string like "10.00", not a float'
@@ -64,14 +55,14 @@ class DonationEvent(BaseModel):
 
 
 class CurrencyTotal(BaseModel):
-    """Aggregate for one currency: exact Decimal total and event count."""
+    """Per-currency aggregate: exact Decimal total and event count."""
 
     total: Decimal
     count: int
 
 
 class StatsResponse(BaseModel):
-    """Stats grouped BY currency — different currencies are never summed."""
+    """Stats grouped by currency, currencies are never summed together."""
 
     by_currency: dict[str, CurrencyTotal]
     total_count: int
