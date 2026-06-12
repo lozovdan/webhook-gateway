@@ -1,0 +1,13 @@
+services:
+  webhook-gateway:
+    build: .
+    image: webhook-gateway:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Required: the app refuses to start without it.
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET (copy .env.example to .env)}
+      # Optional: sensible defaults applied when omitted.
+      ALLOWED_CURRENCIES: ${ALLOWED_CURRENCIES:-USD,EUR,CZK}
+      REPLAY_TOLERANCE_SECONDS: ${REPLAY_TOLERANCE_SECONDS:-300}
+    restart: unless-stopped

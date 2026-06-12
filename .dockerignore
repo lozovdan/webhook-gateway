@@ -1,0 +1,42 @@
+# Keep the build context small and never ship secrets, tests or caches.
+.git
+.github
+.gitignore
+
+# Virtual environments
+.venv
+venv
+env
+
+# Tests & tooling
+tests
+mutants
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+htmlcov
+.coverage
+.coverage.*
+coverage.xml
+
+# Build artifacts
+build
+dist
+*.egg-info
+__pycache__
+*.py[cod]
+
+# Local env / editor
+.env
+.idea
+.vscode
+.DS_Store
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+compose.yaml
+
+# Agent config
+CLAUDE.md
