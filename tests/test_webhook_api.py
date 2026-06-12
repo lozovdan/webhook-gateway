@@ -47,6 +47,7 @@ def test_duplicate_event_id_returns_409(client: TestClient) -> None:
     response = post_donation(client, "evt_001", donor="Bob Donor")
 
     assert response.status_code == 409
+    assert response.json()["detail"] == "duplicate event_id"
 
 
 def test_disallowed_currency_returns_400(client: TestClient) -> None:
@@ -54,6 +55,7 @@ def test_disallowed_currency_returns_400(client: TestClient) -> None:
     response = post_donation(client, "evt_001", currency="GBP")
 
     assert response.status_code == 400
+    assert response.json()["detail"] == "currency not allowed"
 
 
 @pytest.mark.parametrize(
@@ -71,7 +73,8 @@ def test_invalid_payload_with_valid_signature_returns_400(
     client: TestClient, overrides: dict[str, object], drop: str | None
 ) -> None:
     """Validation failures -> 400, not 422; signature is valid to isolate
-    the parsing path from the auth path."""
+    the parsing path from the auth path. The detail text is part of the
+    contract."""
     payload = make_payload("evt_001", **overrides)
     if drop is not None:
         del payload[drop]
@@ -80,6 +83,7 @@ def test_invalid_payload_with_valid_signature_returns_400(
     response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
 
     assert response.status_code == 400
+    assert response.json()["detail"] == "invalid payload"
 
 
 @pytest.mark.parametrize(
@@ -123,6 +127,7 @@ def test_timestamp_outside_tolerance_returns_400(
     response = client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
 
     assert response.status_code == 400
+    assert response.json()["detail"] == "timestamp outside replay tolerance window"
 
 
 def test_timestamp_on_tolerance_boundary_returns_200(client: TestClient) -> None:
@@ -146,6 +151,7 @@ def test_wrong_signature_returns_401(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+    assert response.json()["detail"] == "missing or invalid signature"
 
 
 def test_missing_signature_header_returns_401(client: TestClient) -> None:

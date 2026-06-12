@@ -37,3 +37,6 @@ htmlcov/
 
 # Hypothesis example database
 .hypothesis/
+
+# Mutmut working dir
+mutants/

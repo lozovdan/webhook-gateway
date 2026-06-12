@@ -40,13 +40,14 @@ def test_valid_env_builds_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_missing_or_blank_secret_raises(
     monkeypatch: pytest.MonkeyPatch, secret: str | None
 ) -> None:
-    """The service must not start without a real secret."""
+    """The service must not start without a real secret. The message names
+    the variable to set, that text is the operator's contract."""
     if secret is None:
         monkeypatch.delenv(ENV_WEBHOOK_SECRET, raising=False)
     else:
         monkeypatch.setenv(ENV_WEBHOOK_SECRET, secret)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="WEBHOOK_SECRET must be set"):
         get_settings()
 
 
@@ -87,7 +88,7 @@ def test_allowed_currencies_set_but_empty_raises(
     monkeypatch.setenv(ENV_WEBHOOK_SECRET, "s3cret")
     monkeypatch.setenv(ENV_ALLOWED_CURRENCIES, raw)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="ALLOWED_CURRENCIES is set but empty"):
         get_settings()
 
 
@@ -143,7 +144,9 @@ def test_replay_tolerance_invalid_raises(
     monkeypatch.setenv(ENV_WEBHOOK_SECRET, "s3cret")
     monkeypatch.setenv(ENV_REPLAY_TOLERANCE_SECONDS, raw)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        RuntimeError, match="REPLAY_TOLERANCE_SECONDS must be a positive integer"
+    ):
         get_settings()
 
 
@@ -155,7 +158,10 @@ def test_module_level_app_builds_from_env(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv(ENV_WEBHOOK_SECRET, "s3cret")
     monkeypatch.delenv(ENV_ALLOWED_CURRENCIES, raising=False)
 
-    assert isinstance(app.main.app, FastAPI)
+    application = app.main.app
+
+    assert isinstance(application, FastAPI)
+    assert application.title == "Webhook Gateway"  # OpenAPI metadata contract
 
 
 def test_module_level_app_without_secret_raises(
@@ -169,6 +175,7 @@ def test_module_level_app_without_secret_raises(
 
 
 def test_module_getattr_unknown_attribute_raises() -> None:
-    """PEP 562 hook only serves 'app'; anything else is a normal AttributeError."""
-    with pytest.raises(AttributeError):
+    """PEP 562 hook only serves 'app'; anything else is a normal AttributeError
+    naming the missing attribute."""
+    with pytest.raises(AttributeError, match="no_such_attribute"):
         _ = app.main.no_such_attribute
