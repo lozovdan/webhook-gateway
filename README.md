@@ -28,6 +28,7 @@ feature breadth.
 - pytest, httpx (TestClient), pytest-cov, hypothesis, mutmut
 - ruff + mypy (strict) enforced in CI
 - In-memory storage (dict) behind a swappable `DonationStore` interface
+- Docker (multi-stage, non-root) + Compose for a one-command run
 - GitHub Actions for CI: lint -> types -> tests with coverage gate
 
 ## Architecture
@@ -86,6 +87,31 @@ export ALLOWED_CURRENCIES="USD,EUR,CZK"   # optional
 # Run the service
 uvicorn app.main:app --reload
 ```
+
+## Run with Docker
+
+The image is multi-stage (build tooling stays out of the final layer), runs as
+a **non-root** user and ships **runtime dependencies only**.
+
+```bash
+# 1. Provide configuration
+cp .env.example .env          # then set WEBHOOK_SECRET
+
+# 2. Build and start
+docker compose up --build     # serves on http://localhost:8000
+
+curl localhost:8000/health    # {"status":"ok"}
+```
+
+Without compose:
+
+```bash
+docker build -t webhook-gateway .
+docker run -p 8000:8000 -e WEBHOOK_SECRET="change-me" webhook-gateway
+```
+
+A `HEALTHCHECK` probes `/health`, so `docker ps` reports the container as
+`healthy` once it is ready to serve.
 
 ## Running tests
 
