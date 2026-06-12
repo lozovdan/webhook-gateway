@@ -1,9 +1,13 @@
 """Business logic for donation processing.
 
 This layer sits between the HTTP routes and the store. It owns the rules that
-are *not* HTTP concerns: the currency allowlist, idempotency (a repeated
-``event_id`` is not stored twice) and statistics aggregation. The service
-knows nothing about HTTP status codes.
+are *not* HTTP concerns: the replay window (an event whose timestamp is too
+far from "now" in either direction is rejected), the currency allowlist,
+idempotency (a repeated ``event_id`` is not stored twice) and statistics
+aggregation. The service knows nothing about HTTP status codes.
+
+Time is read through an injected ``clock`` callable, so time-dependent rules
+are deterministic in tests.
 """
 
 from collections.abc import Callable
@@ -61,10 +65,15 @@ class DonationService:
     def process_donation(self, event: DonationEvent) -> ProcessResult:
         """Apply business rules to a validated event and store it if new.
 
-        Check order: allowlist BEFORE duplicate — an event with a disallowed
-        currency gets CURRENCY_NOT_ALLOWED even if its event_id is already
-        stored. On DUPLICATE the store is not touched (first write wins).
+        Check order: replay window BEFORE allowlist BEFORE duplicate — a
+        stale event reports STALE_TIMESTAMP even when its currency is
+        disallowed or its event_id is already stored (a replayed known
+        event is the actual attack shape). The window is symmetric with an
+        inclusive boundary: |now - timestamp| <= tolerance is accepted.
+        On DUPLICATE the store is not touched (first write wins).
         """
+        if abs(self._clock() - event.timestamp) > self._replay_tolerance:
+            return ProcessResult.STALE_TIMESTAMP
         if event.currency not in self._allowed_currencies:
             return ProcessResult.CURRENCY_NOT_ALLOWED
         if self._store.exists(event.event_id):

@@ -6,7 +6,8 @@ from domain outcomes to HTTP status codes lives here.
 
 Status codes for ``POST /webhooks/donation``:
     200 — accepted and stored
-    400 — invalid payload or disallowed currency
+    400 — invalid payload, disallowed currency, or timestamp outside the
+          replay window
     401 — missing/invalid HMAC signature (checked BEFORE payload parsing)
     409 — duplicate ``event_id`` (idempotency)
 """
@@ -72,12 +73,16 @@ def create_app(
         event: DonationEvent = Depends(verified_donation),
     ) -> dict[str, str]:
         """Map ProcessResult to HTTP: CREATED->200, DUPLICATE->409,
-        CURRENCY_NOT_ALLOWED->400."""
+        CURRENCY_NOT_ALLOWED->400, STALE_TIMESTAMP->400."""
         result = service.process_donation(event)
         if result is ProcessResult.DUPLICATE:
             raise HTTPException(status_code=409, detail="duplicate event_id")
         if result is ProcessResult.CURRENCY_NOT_ALLOWED:
             raise HTTPException(status_code=400, detail="currency not allowed")
+        if result is ProcessResult.STALE_TIMESTAMP:
+            raise HTTPException(
+                status_code=400, detail="timestamp outside replay tolerance window"
+            )
         return {"status": "created", "event_id": event.event_id}
 
     @app.get("/donations")

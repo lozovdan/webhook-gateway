@@ -41,14 +41,19 @@ class Settings:
 def get_settings() -> Settings:
     """Build a :class:`Settings` instance from the process environment.
 
-    Reads ``WEBHOOK_SECRET`` (required, non-empty) and ``ALLOWED_CURRENCIES``
+    Reads ``WEBHOOK_SECRET`` (required, non-empty), ``ALLOWED_CURRENCIES``
     (optional, comma-separated, normalised with strip+upper; unset falls back
-    to :data:`DEFAULT_ALLOWED_CURRENCIES`). No caching: env is read on every
-    call — it runs once at app startup, and tests stay isolated for free.
+    to :data:`DEFAULT_ALLOWED_CURRENCIES`) and ``REPLAY_TOLERANCE_SECONDS``
+    (optional, positive integer; unset falls back to
+    :data:`DEFAULT_REPLAY_TOLERANCE_SECONDS`). No caching: env is read on
+    every call, it runs once at app startup, and tests stay isolated for
+    free.
 
     Raises:
-        RuntimeError: If the secret is missing/empty, or if
-            ``ALLOWED_CURRENCIES`` is set but parses to an empty set.
+        RuntimeError: If the secret is missing/empty, if
+            ``ALLOWED_CURRENCIES`` is set but parses to an empty set, or if
+            ``REPLAY_TOLERANCE_SECONDS`` is set but is not a positive
+            integer (``0`` is rejected too).
     """
     secret = os.environ.get(ENV_WEBHOOK_SECRET, "").strip()
     if not secret:
@@ -64,4 +69,23 @@ def get_settings() -> Settings:
         if not currencies:
             raise RuntimeError(f"{ENV_ALLOWED_CURRENCIES} is set but empty")
 
-    return Settings(webhook_secret=secret, allowed_currencies=currencies)
+    raw_tolerance = os.environ.get(ENV_REPLAY_TOLERANCE_SECONDS)
+    if raw_tolerance is None:
+        tolerance = DEFAULT_REPLAY_TOLERANCE_SECONDS
+    else:
+        error = (
+            f"{ENV_REPLAY_TOLERANCE_SECONDS} must be a positive integer, "
+            f"got {raw_tolerance!r}"
+        )
+        try:
+            tolerance = int(raw_tolerance)
+        except ValueError as exc:
+            raise RuntimeError(error) from exc
+        if tolerance <= 0:
+            raise RuntimeError(error)
+
+    return Settings(
+        webhook_secret=secret,
+        allowed_currencies=currencies,
+        replay_tolerance_seconds=tolerance,
+    )

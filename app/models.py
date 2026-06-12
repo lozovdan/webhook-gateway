@@ -5,11 +5,10 @@ not satisfy the declared types and validators is rejected with HTTP 400
 before it ever reaches the business logic.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
 # Strictly positive money value with at most 2 decimal places.
 Money = Annotated[Decimal, Field(gt=0, decimal_places=2)]
@@ -31,14 +30,17 @@ class DonationEvent(BaseModel):
                    imprecision expands it past 2 decimal places.
         currency:  ISO 4217 code — exactly 3 uppercase letters (format only;
                    allowlist membership is enforced in the service layer).
-        timestamp: datetime.
+        timestamp: datetime, MUST be timezone-aware. Naive values are
+                   rejected rather than assumed UTC: comparing naive and
+                   aware datetimes raises TypeError, and guessing the
+                   sender's zone would silently shift the replay window.
     """
 
     event_id: str
     donor: str
     amount: Money
     currency: CurrencyCode
-    timestamp: datetime
+    timestamp: AwareDatetime
 
     @field_validator("event_id", "donor")
     @classmethod
