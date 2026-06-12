@@ -23,10 +23,31 @@ dev = [
     "pytest-cov>=5.0",
     "hypothesis>=6.100",
     "mutmut>=3.6",
+    "ruff>=0.15",
+    "mypy>=1.10",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+# --- Lint ------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pyupgrade, bugbear.
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Depends() in a parameter default is the FastAPI idiom, not a bug.
+extend-immutable-calls = ["fastapi.Depends"]
+
+# --- Types -----------------------------------------------------------------------
+[tool.mypy]
+strict = true
+files = ["app", "tests"]
+python_version = "3.12"
 
 # --- Test runner configuration -------------------------------------------------
 [tool.pytest.ini_options]
@@ -47,3 +68,8 @@ source = ["app"]
 show_missing = true
 # CI gate: keep coverage above the target stated in CLAUDE.md.
 fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
+    # Abstract-method bodies are unreachable by definition.
+    "raise NotImplementedError",
+]

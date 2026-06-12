@@ -57,7 +57,9 @@ class DonationEvent(BaseModel):
         """Enforce the string contract: float is rejected by type, since
         binary floats cannot represent money exactly (str and int are fine)."""
         if isinstance(value, float):
-            raise ValueError('amount must be sent as a string like "10.00", not a float')
+            raise ValueError(
+                'amount must be sent as a string like "10.00", not a float'
+            )
         return value
 
 

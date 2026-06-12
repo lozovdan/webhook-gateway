@@ -15,6 +15,7 @@ Helpers are plain functions (importable as ``from tests.conftest import ...``):
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -34,9 +35,13 @@ WEBHOOK_PATH = "/webhooks/donation"
 FIXED_NOW = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
 
 
-def make_payload(event_id: str = "evt_001", **overrides: object) -> dict[str, object]:
-    """Valid donation payload dict (amount as a string) with overrides."""
-    payload: dict[str, object] = {
+def make_payload(event_id: str = "evt_001", **overrides: object) -> dict[str, Any]:
+    """Valid donation payload dict (amount as a string) with overrides.
+
+    Typed dict[str, Any] on purpose: negative tests override fields with
+    deliberately wrong-typed junk before feeding the dict to the model.
+    """
+    payload: dict[str, Any] = {
         "event_id": event_id,
         "donor": "Alice Donor",
         "amount": "10.00",
@@ -67,7 +72,10 @@ def post_donation(
 ) -> Response:
     """POST a correctly signed donation built from the valid payload."""
     body = payload_bytes(event_id, **overrides)
-    return client.post(WEBHOOK_PATH, content=body, headers=signed_headers(body))
+    response: Response = client.post(
+        WEBHOOK_PATH, content=body, headers=signed_headers(body)
+    )
+    return response
 
 
 @pytest.fixture()

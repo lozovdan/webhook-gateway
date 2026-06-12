@@ -22,6 +22,7 @@ Design decisions locked in by these tests:
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -29,7 +30,8 @@ from pydantic import ValidationError
 from app.models import DonationEvent
 
 # A single well-formed payload; individual tests override or drop fields.
-VALID_PAYLOAD: dict[str, object] = {
+# dict[str, Any] on purpose: negative tests override fields with junk.
+VALID_PAYLOAD: dict[str, Any] = {
     "event_id": "evt_001",
     "donor": "Alice Donor",
     "amount": "10.00",
@@ -38,12 +40,12 @@ VALID_PAYLOAD: dict[str, object] = {
 }
 
 
-def _payload(**overrides: object) -> dict[str, object]:
+def _payload(**overrides: object) -> dict[str, Any]:
     """Return a copy of the valid payload with the given field overrides."""
     return {**VALID_PAYLOAD, **overrides}
 
 
-def _payload_without(field: str) -> dict[str, object]:
+def _payload_without(field: str) -> dict[str, Any]:
     """Return a copy of the valid payload with ``field`` removed."""
     data = dict(VALID_PAYLOAD)
     data.pop(field)

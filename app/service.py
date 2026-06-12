@@ -73,7 +73,7 @@ class DonationService:
 
         The insert is delegated to the ATOMIC store.add_if_new(), not
         exists()+add(), which is check-then-act and loses events under
-        parallel delivery. First write wins; DUPLICATE never touches 
+        parallel delivery. First write wins; DUPLICATE never touches
         the stored event.
         """
         if abs(self._clock() - event.timestamp) > self._replay_tolerance:

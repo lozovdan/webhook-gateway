@@ -21,6 +21,7 @@ Decisions locked here:
 
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -39,7 +40,7 @@ TOLERANCE = timedelta(seconds=300)
 
 def make_event(event_id: str = "evt_001", **overrides: object) -> DonationEvent:
     """Build a valid DonationEvent with optional field overrides."""
-    payload: dict[str, object] = {
+    payload: dict[str, Any] = {
         "event_id": event_id,
         "donor": "Alice Donor",
         "amount": "10.00",

@@ -13,6 +13,8 @@ Contract decisions locked here:
       still lives in the service.
 """
 
+from typing import Any
+
 import pytest
 
 from app.models import DonationEvent
@@ -21,7 +23,7 @@ from app.store import InMemoryDonationStore
 
 def make_event(event_id: str = "evt_001", **overrides: object) -> DonationEvent:
     """Build a valid DonationEvent with optional field overrides."""
-    payload: dict[str, object] = {
+    payload: dict[str, Any] = {
         "event_id": event_id,
         "donor": "Alice Donor",
         "amount": "10.00",
