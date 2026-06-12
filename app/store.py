@@ -5,6 +5,7 @@ swapped for a real database) and a simple in-memory implementation backed by
 a dict, which is enough for this demo and for fast, isolated tests.
 """
 
+import threading
 from abc import ABC, abstractmethod
 
 from app.models import DonationEvent
@@ -18,8 +19,8 @@ class DonationStore(ABC):
         """Persist a donation event.
 
         A duplicate event_id OVERWRITES the stored event (last-write-wins):
-        the store is dumb storage; the idempotency rule (409 on duplicate)
-        belongs to the service layer, which checks ``exists()`` first.
+        plain writes stay dumb. The idempotency rule (409 on duplicate)
+        belongs to the service layer, which inserts via ``add_if_new()``.
         """
         raise NotImplementedError
 
@@ -64,12 +65,18 @@ class InMemoryDonationStore(DonationStore):
     def __init__(self) -> None:
         """Initialise an empty store keyed by event_id."""
         self._events: dict[str, DonationEvent] = {}
+        # Makes add_if_new's check+write indivisible.
+        self._lock = threading.Lock()
 
     def add(self, event: DonationEvent) -> None:  # noqa: D102 (see base class)
         self._events[event.event_id] = event
 
     def add_if_new(self, event: DonationEvent) -> bool:  # noqa: D102
-        raise NotImplementedError
+        with self._lock:
+            if event.event_id in self._events:
+                return False
+            self._events[event.event_id] = event
+            return True
 
     def get(self, event_id: str) -> DonationEvent | None:  # noqa: D102
         return self._events.get(event_id)

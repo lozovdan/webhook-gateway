@@ -70,15 +70,18 @@ class DonationService:
         disallowed or its event_id is already stored (a replayed known
         event is the actual attack shape). The window is symmetric with an
         inclusive boundary: |now - timestamp| <= tolerance is accepted.
-        On DUPLICATE the store is not touched (first write wins).
+
+        The insert is delegated to the ATOMIC store.add_if_new(), not
+        exists()+add(), which is check-then-act and loses events under
+        parallel delivery. First write wins; DUPLICATE never touches 
+        the stored event.
         """
         if abs(self._clock() - event.timestamp) > self._replay_tolerance:
             return ProcessResult.STALE_TIMESTAMP
         if event.currency not in self._allowed_currencies:
             return ProcessResult.CURRENCY_NOT_ALLOWED
-        if self._store.exists(event.event_id):
+        if not self._store.add_if_new(event):
             return ProcessResult.DUPLICATE
-        self._store.add(event)
         return ProcessResult.CREATED
 
     def get_donation(self, event_id: str) -> DonationEvent | None:
