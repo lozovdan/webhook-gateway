@@ -3,9 +3,14 @@
 Red phase: the method bodies are NotImplementedError stubs; every test below
 must fail with NotImplementedError until the green phase fills them in.
 
-Contract decision locked here: ``add()`` with a duplicate event_id simply
-OVERWRITES (dict semantics). The store is dumb storage — the idempotency
-business rule (409) lives in the service layer via ``exists()``.
+Contract decisions locked here:
+    - ``add()`` with a duplicate event_id simply OVERWRITES (dict
+      semantics): plain writes stay dumb.
+    - ``add_if_new()`` is the ATOMIC insert (first write wins, returns
+      whether it stored), the storage analogue of a unique-constraint
+      INSERT. Atomicity lives in the store because only the store can make
+      check+write indivisible; the business decision "duplicate -> 409"
+      still lives in the service.
 """
 
 import pytest
@@ -93,6 +98,27 @@ def test_add_duplicate_event_id_overwrites(store: InMemoryDonationStore) -> None
     stored = store.get("evt_001")
     assert stored is not None
     assert stored.donor == "Bob Donor"
+    assert len(store.list_all()) == 1
+
+
+def test_add_if_new_stores_and_returns_true(store: InMemoryDonationStore) -> None:
+    """A new event_id is stored and reported as stored."""
+    event = make_event("evt_001")
+
+    assert store.add_if_new(event) is True
+    assert store.get("evt_001") == event
+
+
+def test_add_if_new_duplicate_returns_false_and_keeps_first(
+    store: InMemoryDonationStore,
+) -> None:
+    """A known event_id is NOT overwritten (first write wins) and reports False"""
+    assert store.add_if_new(make_event("evt_001", donor="Alice Donor")) is True
+
+    assert store.add_if_new(make_event("evt_001", donor="Bob Donor")) is False
+    stored = store.get("evt_001")
+    assert stored is not None
+    assert stored.donor == "Alice Donor"
     assert len(store.list_all()) == 1
 
 
