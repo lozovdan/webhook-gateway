@@ -34,3 +34,6 @@ htmlcov/
 
 # Local environment files
 .env
+
+# Hypothesis example database
+.hypothesis/
