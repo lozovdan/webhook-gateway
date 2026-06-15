@@ -11,9 +11,9 @@ feature breadth.
 ## Features
 
 - `POST /webhooks/donation` — ingest a donation event
-  - HMAC-SHA256 signature check over the **raw request body** (`X-Signature` header, shared secret)
+  - HMAC-SHA256 signature check over the raw request body (`X-Signature` header, shared secret)
   - Pydantic v2 payload validation (amount > 0, max 2 decimal places, string-typed money, currency format, timezone-aware timestamp, required fields)
-  - Replay protection: events with a timestamp outside a symmetric tolerance window (default ±300 s, like Stripe) are rejected; the clock is injected for deterministic time-based tests
+  - Replay protection: events with a timestamp outside a symmetric tolerance window are rejected; the clock is injected for deterministic time-based tests
   - Currency allowlist enforced in the service layer
   - Idempotency: a repeated `event_id` is not processed twice (first write wins), race-free under parallel delivery, the insert is atomic in the store (`add_if_new`, the in-memory analogue of a unique-constraint INSERT)
   - Status codes: `200` ok · `400` bad payload / disallowed currency / stale timestamp · `401` bad signature · `409` duplicate
@@ -50,17 +50,16 @@ The whole service was built TDD. 127 tests, 100% line + branch coverage
 (abstract-method bodies excluded as unreachable by definition), CI gate at 90%.
 
 `tests/test_properties.py` adds property-based tests (hypothesis): instead of
-hand-picked examples they state invariants — _any_ signed body verifies, _any_
-tampered body or garbage header fails closed without raising, _any_ positive
-2-dp decimal string is accepted exactly and survives a JSON round-trip, _any_
+hand-picked examples they state invariants, so any signed body verifies, any
+tampered body or garbage header fails closed without raising, any positive
+2-dp decimal string is accepted exactly and survives a JSON round-trip, any
 float is rejected, and hypothesis hunts for counterexamples.
 
-Line coverage says which code the tests _run_; mutation testing (mutmut) says
-which behaviour they actually _pin_. Score: **156/157 mutants killed**. The
-first run left 18 survivors: error messages (`RuntimeError` texts, HTTP `detail`
-bodies, the OpenAPI title) were asserted by status only. Those texts are part
-of the contract, so the tests now pin them. The one survivor is an equivalent
-mutant: `encode("utf-8")` → `encode("UTF-8")`, codec lookup is case-insensitive.
+Line coverage says which code the tests run; mutation testing (mutmut) says
+which behaviour they pin. Score: **156/157 mutants killed**. The
+first run left 18 survivors: those were part of the contract, so the tests now
+pin them. The one survivor is an equivalent mutant: `encode("utf-8")` → `encode("UTF-8")`,
+codec lookup is case-insensitive.
 
 ```bash
 mutmut run        # mutate app/, run the suite against each mutant
